@@ -101,7 +101,7 @@ starter = [
     "opentelemetry-exporter-otlp-proto-http",
     "opentelemetry-sdk",
     "pandas",
-    "pillow",
+    "pillow>=12.2.0",
     "psycopg2-binary",
     "pymilvus[milvus-lite]>=2.4.10",
     "pymongo",
