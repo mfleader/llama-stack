@@ -270,6 +270,17 @@ api-latency-comparison = [
     "mirakuru>=3.0",
     "pandas",
 ]
+benchmark-regression = [
+    {include-group = "api-latency-comparison"},
+    "pymc>=6.0.1",
+    "pytensor>=3.0.4",
+    "nutpie>=0.16.10",
+    "arviz>=1.1.0",
+    "h5py",
+    "h5netcdf",
+    "numpyro",
+    "jax[cpu]",
+]
 
 [project.urls]
 Homepage = "https://github.com/ogx-ai/ogx"

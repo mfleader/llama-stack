@@ -6,7 +6,7 @@
 
 """End-to-end benchmark self-test.
 
-Runs the experiment pipeline (setup → generate → experiment) with
+Runs the full pipeline (setup → generate → experiment → fit) with
 2 replicates and 3s runs, then asserts artifacts were produced.
 
 Run with:
@@ -14,6 +14,7 @@ Run with:
 """
 
 import csv
+import json
 import socket
 import tempfile
 from pathlib import Path
@@ -31,9 +32,9 @@ def benchmark_results():
     cfg = _default_config()
     cfg["run_duration"] = 3
 
-    run_benchmark(cfg, results_dir, baseline_ref="", comparison_ref="HEAD", replicates=2)
+    fp_results = run_benchmark(cfg, results_dir, baseline_ref="", comparison_ref="HEAD", replicates=2)
 
-    yield results_dir
+    yield results_dir, fp_results
 
     cleanup_worktrees(cfg)
 
@@ -82,7 +83,7 @@ class TestExperimentPipeline:
     }
 
     def test_experiment_matrix_has_correct_schema(self, benchmark_results):
-        results_dir = benchmark_results
+        results_dir, _ = benchmark_results
         with open(results_dir / "experiment-matrix.csv") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -93,7 +94,7 @@ class TestExperimentPipeline:
         assert versions == {"baseline", "comparison", "comparison_ctrl"}
 
     def test_run_log_records_all_runs(self, benchmark_results):
-        results_dir = benchmark_results
+        results_dir, _ = benchmark_results
         with open(results_dir / "run-log.csv") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
@@ -102,7 +103,7 @@ class TestExperimentPipeline:
         assert all(int(r["requests_completed"]) > 0 for r in rows)
 
     def test_each_run_has_request_data(self, benchmark_results):
-        results_dir = benchmark_results
+        results_dir, _ = benchmark_results
         run_dirs = [d for d in (results_dir / "runs").iterdir() if d.name != "preflight" and d.is_dir()]
         assert len(run_dirs) == 6
         for rd in run_dirs:
@@ -116,10 +117,36 @@ class TestExperimentPipeline:
             assert "response_time_ms" in reader.fieldnames
 
     def test_environment_recorded(self, benchmark_results):
-        results_dir = benchmark_results
+        results_dir, _ = benchmark_results
         env_file = results_dir / "environment.txt"
         assert env_file.exists()
         content = env_file.read_text()
         assert "hostname:" in content
         assert "cpu_pinning:" in content
         assert "seed:" in content
+
+
+class TestAnalysisPipeline:
+    def test_fp_results_returned(self, benchmark_results):
+        _, fp_results = benchmark_results
+        assert "false_positive_detected" in fp_results
+
+    def test_decisions_csv_exists(self, benchmark_results):
+        results_dir, _ = benchmark_results
+        decisions = results_dir / "analysis" / "fits" / "decisions.csv"
+        assert decisions.exists()
+        with open(decisions) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert len(rows) >= 6
+
+    def test_fp_results_json_valid(self, benchmark_results):
+        results_dir, _ = benchmark_results
+        fp_path = results_dir / "analysis" / "fits" / "fp-results.json"
+        assert fp_path.exists()
+        fp = json.loads(fp_path.read_text())
+        assert "false_positive_detected" in fp
+
+    def test_idata_exists(self, benchmark_results):
+        results_dir, _ = benchmark_results
+        assert (results_dir / "analysis" / "fits" / "idata.nc").exists()

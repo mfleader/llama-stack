@@ -1,11 +1,9 @@
 # API Latency Comparison Benchmark
 
-Measures per-request latency of two OGX versions under a controlled
-agentic workload. Compares an older release against a newer commit by
-running both through a mocked agentic workload and recording
-per-request response times.
-
-Analysis and model fitting are added in a follow-up PR.
+Detects latency regressions between two OGX versions using a Bayesian
+hierarchical model. Compares an older release against a newer commit by
+running both through a mocked agentic workload and fitting a Wald
+(Inverse Gaussian) latency model to the per-request response times.
 
 ## Overview
 
@@ -24,10 +22,10 @@ The three trials are:
 
 Each run starts a fresh OGX server against a mock backend, sends
 agentic requests (with web_search tool calls) via Locust for a fixed
-duration, and records per-request latencies. The false positive
-detection runs the negative control (same code as comparison, run
-independently) to verify the experiment isn't producing spurious
-differences.
+duration, and records per-request latencies. A Bayesian model estimates
+the version effect on mean latency. The false positive detection runs
+a negative control (same code as comparison, run independently) to
+verify the experiment isn't producing spurious differences.
 
 Components:
 
@@ -36,18 +34,22 @@ Components:
 - **Experiment orchestrator** (`experiment/benchmark.py`): run execution with CPU pinning
 - **Worktree setup** (`experiment/setup-worktree.sh`): isolated git worktrees per version
 - **Design matrix** (`experiment/generate_design_matrix.py`): randomized experiment design
+- **Model fitting** (`analysis/fit_resp_latency_model.py`): Wald (Inverse Gaussian) model + diagnostics
 
 ## Prerequisites
 
 ```bash
-# Benchmark experiment dependencies (Locust, mirakuru)
-uv sync --group api-latency-comparison
+# Full benchmark dependencies (experiment + analysis)
+uv sync --group benchmark-regression
+
+# Rust toolchain (required for nutpie compilation)
+rustup show  # or: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 ## Quick Start
 
-The orchestrator handles worktree setup, matrix generation, and
-experiment execution in one command:
+The orchestrator handles worktree setup, matrix generation, experiment
+execution, and model fitting in one command:
 
 ```bash
 uv run python -m benchmarking.api_latency_comparison.experiment.benchmark \
@@ -55,6 +57,46 @@ uv run python -m benchmarking.api_latency_comparison.experiment.benchmark \
 ```
 
 Output lands in an auto-timestamped directory under `results/`.
+
+## GitHub Actions
+
+The workflow at `.github/workflows/response-latency-regression-benchmark.yml`
+runs daily comparing the latest release tag against main. Manual dispatch
+accepts custom refs, replicates, and run duration.
+
+```bash
+gh workflow run response-latency-regression-benchmark.yml \
+  -f replicates=10 \
+  -f run_duration=10
+```
+
+## Interpreting Results
+
+The fit script prints parameter estimates, diagnostics, and a summary:
+
+```text
+============================================================
+RESULTS (regression threshold: 1.0ms)
+============================================================
+comparison vs baseline
+  mean latency: +1.7ms  [+1.5, +2.0]
+  p50:  +1.7ms  [+1.4, +2.1]  REGRESSION
+  p95:  +2.0ms  [+1.3, +2.7]  REGRESSION
+  p99:  +2.0ms  [+0.7, +3.3]  no regression
+============================================================
+```
+
+- **mean latency**: posterior mean shift with 99% HDI
+- **p50/p95/p99**: posterior predictive quantile contrasts
+- **REGRESSION**: P(contrast <= 1ms) < 0.05
+- **False positive check**: same-code control must show no difference
+
+Diagnostics include MCMC health (divergences, E-BFMI, ESS), posterior
+correlations, prior-to-posterior contraction, Pareto k analysis, and
+residual autocorrelation checks.
+
+Output files: `decisions.csv`, `fp-results.json`, and `idata.nc`
+(full InferenceData for offline analysis).
 
 ## Configuration
 
@@ -70,6 +112,10 @@ Output lands in an auto-timestamped directory under `results/`.
 | `CPU_MOCK` | 2 | Core for mock server |
 
 ## Implementation Notes
+
+**Data filtering**: The first and last observation of each run are
+dropped before fitting. The first is a client warmup artifact (Locust
+connection setup). The last is frequently elevated (edge-of-window effect).
 
 **CPU pinning**: Processes are pinned via `os.sched_setaffinity()` in
 `preexec_fn` callbacks, applied at fork before exec. Pinning is verified

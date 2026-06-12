@@ -33,6 +33,7 @@ from typing import Any
 import pandas as pd
 from mirakuru import HTTPExecutor
 
+from benchmarking.api_latency_comparison.analysis.fit_resp_latency_model import load_and_fit
 from benchmarking.api_latency_comparison.experiment.generate_design_matrix import (
     find_latest_release_tag,
     generate_matrix,
@@ -295,6 +296,7 @@ def run_experiment(cfg: dict[str, Any], results_dir: Path | str, matrix_csv: Pat
     """Main experiment loop."""
     results_dir = Path(results_dir)
     (results_dir / "runs").mkdir(parents=True, exist_ok=True)
+    (results_dir / "analysis" / "fits").mkdir(parents=True, exist_ok=True)
     taskset = run_all_checks(
         str(results_dir),
         str(matrix_csv),
@@ -429,6 +431,11 @@ def setup_and_generate(results_dir: Path, baseline_ref: str | None, comparison_r
     return matrix_path
 
 
+def fit_model(results_dir: Path, baseline_label: str) -> dict[str, Any]:
+    log("Fitting model...")
+    return load_and_fit([str(results_dir)], baseline_label)
+
+
 def cleanup_worktrees(cfg: dict[str, Any]) -> None:
     for label in [BASELINE_LABEL, COMPARISON_LABEL]:
         shutil.rmtree(f"{cfg['worktree_base']}/{label}", ignore_errors=True)
@@ -437,12 +444,13 @@ def cleanup_worktrees(cfg: dict[str, Any]) -> None:
 
 def run_benchmark(
     cfg: dict[str, Any], results_dir: Path | str, baseline_ref: str | None, comparison_ref: str, replicates: int
-) -> None:
+) -> dict[str, Any]:
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     matrix_csv = setup_and_generate(results_dir, baseline_ref, comparison_ref, replicates)
     run_experiment(cfg, results_dir, matrix_csv)
+    return fit_model(results_dir, BASELINE_LABEL)
 
 
 def _default_config() -> dict[str, Any]:
@@ -481,8 +489,9 @@ def main() -> None:
     log(f"  Results: {results_dir}")
     log(f"  Duration: {cfg['run_duration']}s per run")
 
+    fp_results = {}
     try:
-        run_benchmark(cfg, results_dir, args.baseline_ref, args.comparison_ref, args.replicates)
+        fp_results = run_benchmark(cfg, results_dir, args.baseline_ref, args.comparison_ref, args.replicates)
     except (PreflightError, ValueError) as e:
         log(f"ERROR: {e}")
         sys.exit(1)
@@ -490,6 +499,9 @@ def main() -> None:
         sys.exit(130)
     finally:
         cleanup_worktrees(cfg)
+
+    if fp_results.get("false_positive_detected"):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
