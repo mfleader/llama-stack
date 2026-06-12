@@ -265,6 +265,11 @@ docs = [
 ]
 codegen = ["rich", "pydantic>=2.11.9", "jinja2>=3.1.6"]
 benchmark = ["locust>=2.39.1"]
+api-latency-comparison = [
+    {include-group = "benchmark"},
+    "mirakuru>=3.0",
+    "pandas",
+]
 
 [project.urls]
 Homepage = "https://github.com/ogx-ai/ogx"
