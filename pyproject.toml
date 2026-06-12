@@ -254,6 +254,18 @@ docs = [
 ]
 codegen = ["rich", "pydantic>=2.11.9", "jinja2>=3.1.6"]
 benchmark = ["locust>=2.39.1"]
+benchmark-regression = [
+    {include-group = "benchmark"},
+    "pymc>=6.0.1",
+    "pytensor>=3.0.4",
+    "nutpie>=0.16.10",
+    "arviz>=1.1.0",
+    "h5py",
+    "h5netcdf",
+    "numpyro",
+    "jax[cpu]",
+    "mirakuru>=3.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/ogx-ai/ogx"
