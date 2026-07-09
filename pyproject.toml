@@ -49,7 +49,7 @@ dependencies = [
     "termcolor",
     "tiktoken",
     "h11>=0.16.0",
-    "python-multipart>=0.0.22",                       # For fastapi Form
+    "python-multipart>=0.0.27",                       # For fastapi Form
     "uvicorn>=0.34.0",                                # server
     "opentelemetry-sdk>=1.30.0",                      # server
     "opentelemetry-exporter-otlp-proto-http>=1.30.0", # server
